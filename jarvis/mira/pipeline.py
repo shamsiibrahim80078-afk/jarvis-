@@ -1255,6 +1255,57 @@ def run_video(
         except Exception:
             pass
 
+    # Phase 2: creative_generative → provider-based creative engine (not live tours).
+    # Uploads / talking-character keeps the existing specialized paths below.
+    try:
+        from jarvis.mira.video_router import route_video_ask, requires_live_hard_lock
+
+        _cre_route = route_video_ask(topic_clean, brief)
+        if (
+            _cre_route.pipeline == "creative_generative"
+            and not requires_live_hard_lock(_cre_route)
+            and not use_uploads
+            and not media_paths
+            and not force_character
+        ):
+            from jarvis.mira.creative_engine import run_creative_video
+
+            creat = run_creative_video(
+                topic_clean,
+                script=script,
+                duration_sec=int(duration_sec or 30),
+                aspect=str(aspect or "9:16"),
+                voice=voice,
+                audio_mode=str(audio_mode or "voice"),
+                search_hints=list(search_hints or []) or None,
+                mood=mood,
+            )
+            if creat.get("ok"):
+                try:
+                    save_last_output(
+                        {
+                            **creat,
+                            "topic": topic_clean,
+                            "mood": mood,
+                            "aspect": aspect,
+                            "format": "youtube_shorts" if str(aspect) == "9:16" else "youtube",
+                            "duration_sec": duration_sec,
+                            "video_pipeline": "creative_generative",
+                        }
+                    )
+                except Exception:
+                    pass
+            return creat
+    except Exception as exc:
+        # Do not silently invent a different path — surface engine errors
+        return {
+            "ok": False,
+            "status": "error",
+            "message": f"Creative engine failed: {exc}"[:240],
+            "notes": ["creative_engine_exception"],
+            "video_pipeline": "creative_generative",
+        }
+
     def _once(**kw: Any) -> dict[str, Any]:
         return _run_video_once(
             kw.get("topic") or topic_clean,

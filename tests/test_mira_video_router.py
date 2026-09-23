@@ -6,6 +6,8 @@ from jarvis.mira.generation_provider import (
     UnimplementedGenerationProvider,
     VideoGenerationRequest,
     get_generation_provider,
+    get_neural_video_provider,
+    set_generation_provider,
 )
 from jarvis.mira.intent import expand_ask
 from jarvis.mira.video_router import (
@@ -100,15 +102,23 @@ def test_parse_mira_command_exposes_pipeline():
 
 
 def test_generation_provider_not_implemented_explicit():
-    p = get_generation_provider()
-    assert isinstance(p, UnimplementedGenerationProvider)
-    assert p.is_available() is False
-    out = p.generate(VideoGenerationRequest(brief="futuristic robot office"))
-    assert out.get("ok") is False
-    assert out.get("status") == "not_implemented"
-    assert "not implemented" in (out.get("message") or "").lower()
-    assert not out.get("video_path")
-    assert not out.get("media_url")
+    from jarvis.mira.generation_provider import (
+        UnavailableNeuralVideoProvider,
+        set_generation_provider,
+        get_neural_video_provider,
+    )
+
+    set_generation_provider(UnavailableNeuralVideoProvider())
+    try:
+        p = get_neural_video_provider()
+        assert p.is_available() is False
+        out = p.generate(VideoGenerationRequest(brief="futuristic robot office"))
+        assert out.get("ok") is False
+        assert out.get("status") in ("unavailable", "not_implemented")
+        assert not out.get("video_path")
+        assert out.get("is_neural_video") is False
+    finally:
+        set_generation_provider(None)
 
 
 def test_lifestyle_not_hard_locked():
