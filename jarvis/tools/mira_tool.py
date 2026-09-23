@@ -764,17 +764,16 @@ def parse_mira_command(text: str) -> dict[str, Any] | None:
 
     # Named platforms OR any web product/SaaS/API → live screen tour (never Shorts stock defaults)
     platform_tour = False
+    video_pipeline = "creative_generative"
     try:
-        from jarvis.mira.platforms import detect_platform
-        from jarvis.mira.web_products import looks_like_web_product_ask, resolve_web_product
+        from jarvis.mira.video_router import route_video_ask
 
-        if detect_platform(raw) or detect_platform(topic_clean):
-            platform_tour = True
-        elif looks_like_web_product_ask(raw) or looks_like_web_product_ask(topic_clean):
-            if resolve_web_product(raw) or resolve_web_product(topic_clean):
-                platform_tour = True
+        _route = route_video_ask(raw, topic_clean)
+        platform_tour = bool(_route.prefer_platform_record)
+        video_pipeline = str(_route.pipeline)
     except Exception:
         platform_tour = False
+        video_pipeline = "creative_generative"
 
     from jarvis.mira.formats import apply_format, detect_format, detect_mood
 
@@ -872,6 +871,7 @@ def parse_mira_command(text: str) -> dict[str, Any] | None:
         "mood": mood,
         "needs_format": False,  # Shorts-first default — no menu delay
         "platform_tour": bool(platform_tour),
+        "video_pipeline": video_pipeline,
     }
     if use_uploads:
         parsed["use_uploads"] = True

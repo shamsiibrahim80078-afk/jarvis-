@@ -415,4 +415,5 @@ def resolve_web_product(text: str) -> dict[str, Any] | None:
         "steps": _dynamic_steps(name, home, raw),
         "aliases": [],
         "_dynamic": True,
+        "_guessed": True,
     }

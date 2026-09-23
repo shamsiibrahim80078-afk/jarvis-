@@ -221,28 +221,18 @@ def expand_ask(text: str) -> dict[str, Any]:
     ).strip() or raw
     original = re.sub(r"\s+", " ", original).strip(" .,:;-") or raw[:80]
 
-    # Known web platforms → prefer real screen-record tour
+    # Single routing boundary (live / creative / hybrid) — hard-lock behavior unchanged
     prefer_platform = False
+    video_pipeline = "creative_generative"
     try:
-        from jarvis.mira.platforms import detect_platform, wants_platform_record
+        from jarvis.mira.video_router import route_video_ask
 
-        if detect_platform(raw) or detect_platform(original):
-            # Named platform = live tour always (stock "cinematic" briefs caused random scenes)
-            prefer_platform = True
-        elif wants_platform_record(raw):
-            prefer_platform = True
+        _route = route_video_ask(raw, original)
+        prefer_platform = bool(_route.prefer_platform_record)
+        video_pipeline = str(_route.pipeline)
     except Exception:
-        pass
-    # Dynamic products (ElevenLabs, Stripe, …) — never expand to random AI portraits
-    if not prefer_platform:
-        try:
-            from jarvis.mira.web_products import looks_like_web_product_ask, resolve_web_product
-
-            if looks_like_web_product_ask(raw) or looks_like_web_product_ask(original):
-                if resolve_web_product(raw) or resolve_web_product(original):
-                    prefer_platform = True
-        except Exception:
-            pass
+        prefer_platform = False
+        video_pipeline = "creative_generative"
 
     entity = detect_entity(original) or detect_entity(raw)
     # Brand keys that are also live platforms — never expand to Pexels/AI B-roll
@@ -258,6 +248,8 @@ def expand_ask(text: str) -> dict[str, Any]:
     }
     if entity in _PLATFORM_ENTITIES:
         prefer_platform = True
+        if video_pipeline == "creative_generative":
+            video_pipeline = "live_screen"
 
     if entity and entity in _ENTITY_SCENES:
         meta = _ENTITY_SCENES[entity]
@@ -270,6 +262,7 @@ def expand_ask(text: str) -> dict[str, Any]:
                 "search_queries": [original[:80]],
                 "prefer_ai_stills": False,
                 "prefer_platform_record": True,
+                "video_pipeline": video_pipeline if video_pipeline != "creative_generative" else "live_screen",
                 "reject_pattern": str(meta.get("reject") or ""),
                 "_via": "platform_exact",
             }
@@ -280,6 +273,7 @@ def expand_ask(text: str) -> dict[str, Any]:
             "search_queries": list(meta["queries"])[:6],
             "prefer_ai_stills": bool(meta.get("prefer_ai_stills")),
             "prefer_platform_record": prefer_platform,
+            "video_pipeline": video_pipeline,
             "reject_pattern": str(meta.get("reject") or ""),
             "_via": "entity_expand",
         }
@@ -295,6 +289,7 @@ def expand_ask(text: str) -> dict[str, Any]:
             "search_queries": [original[:80]],
             "prefer_ai_stills": False,
             "prefer_platform_record": True,
+            "video_pipeline": video_pipeline if video_pipeline != "creative_generative" else "live_screen",
             "reject_pattern": "",
             "_via": "platform_or_web_product",
         }
@@ -315,6 +310,7 @@ def expand_ask(text: str) -> dict[str, Any]:
             ],
             "prefer_ai_stills": len(words) == 1,
             "prefer_platform_record": prefer_platform,
+            "video_pipeline": video_pipeline,
             "reject_pattern": r"wooden|alphabet|letter.?block|scrabble|stamp",
             "_via": "thin_topic_expand",
         }
@@ -326,6 +322,7 @@ def expand_ask(text: str) -> dict[str, Any]:
         "search_queries": [original[:80]],
         "prefer_ai_stills": False,
         "prefer_platform_record": prefer_platform,
+        "video_pipeline": video_pipeline,
         "reject_pattern": "",
         "_via": "passthrough",
     }

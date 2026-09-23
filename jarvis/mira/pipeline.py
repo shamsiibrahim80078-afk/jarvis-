@@ -1180,23 +1180,14 @@ def run_video(
     brief = (script or topic_clean).strip() or topic_clean
 
     # HARD LOCK: known sites + any web product/API/SaaS → live screen-record ONLY.
-    # Never invent Pexels/AI portraits or cinematic B-roll for a real product ask.
+    # Routing decision is centralized in video_router (behavior unchanged).
     try:
-        from jarvis.mira.platforms import detect_platform, run_platform_tour
+        from jarvis.mira.platforms import run_platform_tour
+        from jarvis.mira.video_router import route_video_ask, requires_live_hard_lock
 
-        plat = detect_platform(topic_clean) or detect_platform(brief) or detect_platform(
-            f"{topic_clean} {brief}"
-        )
-        if not plat:
-            try:
-                from jarvis.mira.web_products import looks_like_web_product_ask, resolve_web_product
-
-                ask_blob = f"{topic_clean} {brief}".strip()
-                if looks_like_web_product_ask(ask_blob) or looks_like_web_product_ask(topic_clean):
-                    plat = resolve_web_product(ask_blob) or resolve_web_product(topic_clean)
-            except Exception:
-                pass
-        if plat:
+        _route = route_video_ask(topic_clean, brief, f"{topic_clean} {brief}")
+        plat = _route.platform
+        if requires_live_hard_lock(_route) and plat:
             try:
                 from jarvis.tools.mira_jobs import set_progress
 
@@ -1205,6 +1196,8 @@ def run_video(
                 )
             except Exception:
                 pass
+            from jarvis.mira.platforms import detect_platform
+
             tour_ask = topic_clean if detect_platform(topic_clean) else brief
             # Ensure "video" intent so wants_platform_record stays true inside tour helpers
             if not re.search(r"\b(video|clip|reel|short|tour|explore)\b", tour_ask, re.I):
@@ -1227,6 +1220,7 @@ def run_video(
                             "aspect": aspect,
                             "format": "youtube_shorts" if str(aspect) == "9:16" else "youtube",
                             "duration_sec": duration_sec,
+                            "video_pipeline": _route.pipeline,
                         }
                     )
                 except Exception:
@@ -1240,9 +1234,11 @@ def run_video(
                     f"{(out.get('message') or 'Retry')[:160]} "
                     "Jarvis will not invent random stock scenes for this ask."
                 )[:320],
-                "notes": list(out.get("notes") or []) + ["platform_hard_lock=no_stock_fallback"],
+                "notes": list(out.get("notes") or [])
+                + ["platform_hard_lock=no_stock_fallback", f"video_pipeline={_route.pipeline}"],
                 "provider": "mira_platform_required",
                 "platform": plat["id"],
+                "video_pipeline": _route.pipeline,
             }
     except Exception as exc:
         # Still refuse stock for named platforms
@@ -1381,29 +1377,31 @@ def _run_video_once(
             return user_out
 
     # 2) Real platform / product screen-record FIRST (before character or stock).
-    # User asked for the site itself — do NOT invent random portraits / B-roll.
+    # Centralized hard-lock via video_router — never invent random portraits / B-roll.
     notes: list[str] = []
     try:
-        from jarvis.mira.platforms import detect_platform, run_platform_tour, wants_platform_record
+        from jarvis.mira.platforms import run_platform_tour, wants_platform_record
+        from jarvis.mira.video_router import route_video_ask, requires_live_hard_lock
 
         ask_text = brief or topic_clean
-        plat = detect_platform(ask_text) or detect_platform(topic_clean)
-        if not plat and prefer_platform:
-            try:
-                from jarvis.mira.web_products import resolve_web_product
-
-                plat = resolve_web_product(ask_text) or resolve_web_product(topic_clean)
-            except Exception:
-                pass
-        if plat and (prefer_platform or wants_platform_record(ask_text)):
+        _route = route_video_ask(ask_text, topic_clean)
+        plat = _route.platform
+        prefer_platform = prefer_platform or bool(_route.prefer_platform_record)
+        if plat and (
+            requires_live_hard_lock(_route)
+            or prefer_platform
+            or wants_platform_record(ask_text)
+        ):
             try:
                 from jarvis.tools.mira_jobs import set_progress
 
                 set_progress(f"Recording live {plat['name']} — not stock scenes…")
             except Exception:
                 pass
+            from jarvis.mira.platforms import detect_platform
+
             # Full product tours need headroom — do not clamp to Shorts 90s here
-            tour_dur = max(dur, 120) if prefer_platform else dur
+            tour_dur = max(dur, 120) if prefer_platform or requires_live_hard_lock(_route) else dur
             plat_out = run_platform_tour(
                 ask_text if detect_platform(ask_text) else topic_clean,
                 duration_sec=tour_dur,
@@ -1412,6 +1410,8 @@ def _run_video_once(
                 audio_mode=mode,
             )
             if plat_out.get("ok"):
+                plat_out = dict(plat_out)
+                plat_out["video_pipeline"] = _route.pipeline
                 return plat_out
             # HARD: never fall through to Pexels/AI stills for a named platform
             return {
@@ -1423,16 +1423,23 @@ def _run_video_once(
                     "Will not invent random stock scenes."
                 )[:320],
                 "notes": list(plat_out.get("notes") or [])
-                + ["platform_hard_lock=no_stock_in__run_video_once"],
+                + [
+                    "platform_hard_lock=no_stock_in__run_video_once",
+                    f"video_pipeline={_route.pipeline}",
+                ],
                 "provider": "mira_platform_required",
                 "platform": plat["id"],
+                "video_pipeline": _route.pipeline,
             }
     except Exception as exc:
         try:
             from jarvis.mira.platforms import detect_platform
+            from jarvis.mira.video_router import route_video_ask, requires_live_hard_lock
 
+            _r = route_video_ask(brief or topic_clean, topic_clean)
             if (
                 prefer_platform
+                or requires_live_hard_lock(_r)
                 or detect_platform(brief or topic_clean)
                 or detect_platform(topic_clean)
             ):
