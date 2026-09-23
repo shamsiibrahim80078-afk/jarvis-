@@ -97,12 +97,23 @@ def validate_creative_output(
             issues.append(f"aspect_mismatch want={want} got={got}")
 
     handled = list(result.get("scenes_handled") or [])
-    if planned_scene_ids and handled:
-        missing = [s for s in planned_scene_ids if s not in handled]
+    # Prefer explicit generation-expectation list (Phase 5A HF cap honesty)
+    expected = list(
+        result.get("scenes_expected_for_generation") or planned_scene_ids or []
+    )
+    if expected and handled:
+        missing = [s for s in expected if s not in handled]
         if missing:
             issues.append(f"scenes_missing={missing[:4]}")
-    elif planned_scene_ids and not handled:
+    elif expected and not handled:
         issues.append("scenes_not_reported")
+
+    # If a full plan was larger than what was submitted, require honest deferral metadata
+    deferred = list(result.get("scenes_deferred_by_cap") or [])
+    planned_full = int(result.get("scenes_planned_count") or 0)
+    submitted = int(result.get("scenes_submitted_count") or 0)
+    if planned_full and submitted and planned_full > submitted and not deferred:
+        issues.append("scene_cap_not_reported")
 
     # Duplicate narration check
     norms = [re.sub(r"\s+", " ", (n or "").strip().lower()) for n in narrations if (n or "").strip()]

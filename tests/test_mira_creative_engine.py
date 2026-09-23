@@ -1,4 +1,4 @@
-"""Phase 2: creative brief, scene planner, provider honesty, routing regression."""
+"""Phase 2/5A: creative brief, story planner, provider honesty, routing regression."""
 
 from __future__ import annotations
 
@@ -63,6 +63,64 @@ def test_scene_plan_has_required_fields_and_unique_narration():
     assert len(set(narrs)) >= 2
 
 
+def test_story_beat_assignment_adapts_to_scene_count():
+    brief = build_creative_brief(
+        "Make a cinematic story about a detective discovering a secret room",
+        duration_sec=30,
+    )
+    assert brief.purpose == "story"
+    plan = plan_scenes(brief)
+    beats = [s.story_beat or s.role for s in plan.scenes]
+    assert beats[0] == "hook"
+    assert beats[-1] == "payoff"
+    assert any(b in beats for b in ("setup", "development", "turn", "escalation"))
+    assert " → ".join(b.upper() for b in beats) == plan.structure
+
+    brief6 = build_creative_brief(
+        "Make a 60 second cinematic story about an astronaut on Mars",
+        duration_sec=60,
+    )
+    plan6 = plan_scenes(brief6)
+    assert len(plan6.scenes) >= 5
+    assert (plan6.scenes[0].story_beat or plan6.scenes[0].role) == "hook"
+    assert (plan6.scenes[-1].story_beat or plan6.scenes[-1].role) == "payoff"
+
+
+def test_scene_continuity_context_between_scenes():
+    brief = build_creative_brief(
+        "Create a suspenseful story about an abandoned house",
+        duration_sec=30,
+    )
+    plan = plan_scenes(brief)
+    assert plan.scenes[0].previous_scene_summary == ""
+    for i, sc in enumerate(plan.scenes):
+        assert sc.continuity
+        assert sc.continuity_bridge
+        assert sc.progress_note
+        low = sc.visual_prompt.lower()
+        assert "subject" in low or "continu" in low
+        if i > 0:
+            assert sc.previous_scene_summary
+            assert "CONTINUATION" in sc.visual_prompt or "Previous scene" in sc.visual_prompt
+            prev = plan.scenes[i - 1]
+            assert (prev.role in sc.continuity_bridge) or (
+                (prev.story_beat or "") in sc.continuity_bridge
+            )
+
+
+def test_sequence_aware_narration_advances_story():
+    brief = build_creative_brief(
+        "Make a cinematic detective story about a secret room",
+        duration_sec=45,
+    )
+    plan = plan_scenes(brief)
+    narrs = [s.narration.strip().lower() for s in plan.scenes if s.narration.strip()]
+    assert len(narrs) >= 3
+    assert len(set(narrs)) == len(narrs)
+    topic = brief.topic.strip().lower()
+    assert not all(n == topic or n == f"{topic}." for n in narrs)
+
+
 def test_arbitrary_topics_not_hardcoded():
     for ask in (
         "funny 30-second video about office workers",
@@ -73,8 +131,52 @@ def test_arbitrary_topics_not_hardcoded():
         plan = plan_scenes(brief)
         assert plan.scenes
         blob = " ".join(s.visual_prompt.lower() for s in plan.scenes)
-        # Topic nouns survive into visuals — not a fixed office/tech default
         assert any(tok in blob for tok in ask.lower().split() if len(tok) > 4)
+
+
+def test_hf_scene_cap_reported_honestly(monkeypatch):
+    """When plan > MIRA_HF_T2V_MAX_SCENES, engine submits a prefix and reports deferrals."""
+    from jarvis.mira import creative_engine as eng
+
+    monkeypatch.setenv("MIRA_HF_T2V_MAX_SCENES", "2")
+
+    class _FakeHF:
+        provider_id = "mira_hf_remote_t2v"
+
+        def is_available(self) -> bool:
+            return True
+
+        def generate(self, request: VideoGenerationRequest) -> dict:
+            scenes = list((request.meta or {}).get("scenes") or [])
+            assert len(scenes) == 2
+            return {
+                "ok": True,
+                "status": "done",
+                "video_path": "",
+                "message": "fake ok",
+                "scenes_handled": [s["scene_id"] for s in scenes],
+                "narrations": [s.get("narration") or "" for s in scenes],
+                "notes": [],
+                "provider": self.provider_id,
+                "generation_kind": "remote_t2v",
+                "is_neural_video": False,
+            }
+
+    set_generation_provider(_FakeHF())
+    try:
+        out = eng.run_creative_video(
+            "Make a 60 second cinematic story about an astronaut on Mars",
+            duration_sec=60,
+        )
+        assert out.get("scenes_planned_count", 0) > 2
+        assert out.get("scenes_submitted_count") == 2
+        assert out.get("scenes_deferred_by_cap")
+        assert out.get("scene_cap_note")
+        assert "honesty=scene_cap_partial_generation" in (out.get("notes") or [])
+        expected = out.get("scenes_expected_for_generation") or []
+        assert len(expected) == 2
+    finally:
+        set_generation_provider(None)
 
 
 def test_product_still_live_creative_does_not():
@@ -94,19 +196,32 @@ def test_product_still_live_creative_does_not():
 
 
 def test_neural_provider_unavailable_honest():
-    p = get_neural_video_provider()
-    assert isinstance(p, UnavailableNeuralVideoProvider)
-    assert p.is_available() is False
-    out = p.generate(VideoGenerationRequest(brief="astronaut on mars"))
-    assert out["ok"] is False
-    assert out["status"] == "unavailable"
-    assert out.get("is_neural_video") is False
-    assert not out.get("video_path")
+    # Clear token for this test so neural stays unavailable
+    old = os.environ.get("HF_TOKEN")
+    os.environ.pop("HF_TOKEN", None)
+    set_generation_provider(None)
+    try:
+        p = get_neural_video_provider()
+        assert isinstance(p, UnavailableNeuralVideoProvider)
+        assert p.is_available() is False
+        out = p.generate(VideoGenerationRequest(brief="astronaut on mars"))
+        assert out["ok"] is False
+        assert out["status"] == "unavailable"
+        assert out.get("is_neural_video") is False
+        assert not out.get("video_path")
+    finally:
+        if old is None:
+            os.environ.pop("HF_TOKEN", None)
+        else:
+            os.environ["HF_TOKEN"] = old
+        set_generation_provider(None)
 
 
 def test_neural_only_mode_does_not_pretend_success():
     old = os.environ.get("MIRA_CREATIVE_VISUAL_MODE")
+    old_tok = os.environ.get("HF_TOKEN")
     os.environ["MIRA_CREATIVE_VISUAL_MODE"] = "neural_only"
+    os.environ.pop("HF_TOKEN", None)
     set_generation_provider(None)
     try:
         assert creative_visual_mode() == "neural_only"
@@ -121,6 +236,10 @@ def test_neural_only_mode_does_not_pretend_success():
             os.environ.pop("MIRA_CREATIVE_VISUAL_MODE", None)
         else:
             os.environ["MIRA_CREATIVE_VISUAL_MODE"] = old
+        if old_tok is None:
+            os.environ.pop("HF_TOKEN", None)
+        else:
+            os.environ["HF_TOKEN"] = old_tok
         set_generation_provider(None)
 
 
