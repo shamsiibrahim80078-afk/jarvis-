@@ -117,6 +117,14 @@ def validate_creative_output(
             issues.append("false_neural_claim")
     if kind == "neural_video" and not result.get("is_neural_video"):
         issues.append("neural_flag_inconsistent")
+    # remote_t2v may only claim neural when a real file exists
+    if result.get("is_neural_video"):
+        if kind not in ("remote_t2v", "neural_video") and "legacy" not in kind:
+            pass  # allow future neural kinds
+        if kind == "remote_t2v" and (not path.is_file() or path.stat().st_size < 8_000):
+            issues.append("false_neural_claim")
+        if kind == "legacy_stock_collage":
+            issues.append("false_neural_claim")
 
     ok = not issues
     return {

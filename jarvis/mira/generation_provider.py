@@ -1,8 +1,9 @@
-"""Mira generative-video provider contract + implementations (Phase 2).
+"""Mira generative-video provider contract + implementations.
 
 Truth rules:
-- Neural / foundation video generation is NOT available in this environment.
-- Legacy stock+still collage may run only when explicitly selected, and MUST
+- Neural video is only ``is_neural_video=True`` when a real remote-generated MP4
+  was received (e.g. Hugging Face Inference Providers text-to-video).
+- Legacy stock+still collage may run when selected or as auto fallback, and MUST
   label itself as ``legacy_stock_collage`` — never as neural AI video.
 """
 
@@ -44,25 +45,32 @@ class VideoGenerationProvider(Protocol):
 
 
 class UnavailableNeuralVideoProvider:
-    """Honest: no Runway/Veo/Sora-class backend is configured in this repo."""
+    """Honest: no usable remote neural video backend is configured."""
 
     provider_id = "mira_neural_video_unavailable"
 
     def is_available(self) -> bool:
         return False
 
+    def unavailable_reason(self) -> str:
+        from jarvis.mira.hf_video_provider import HuggingFaceTextToVideoProvider
+
+        hf = HuggingFaceTextToVideoProvider()
+        if not hf.is_available():
+            return hf.unavailable_reason()
+        return "No neural video-generation API is configured for Mira."
+
     def generate(self, request: VideoGenerationRequest) -> dict[str, Any]:
         brief = (request.brief or "").strip()[:120]
+        reason = self.unavailable_reason()
         return {
             "ok": False,
             "status": "unavailable",
             "message": (
-                "No neural video-generation API is configured for Mira "
-                "(no Runway/Veo/Sora-class key in .env). "
+                f"{reason} "
                 f"Brief: {brief or '(empty)'}. "
-                "Default mode uses an explicitly labeled legacy stock/still collage "
-                "(not AI video). Set MIRA_CREATIVE_VISUAL_MODE=neural_only to force "
-                "this unavailable error instead."
+                "Set HF_TOKEN + MIRA_HF_T2V_MODEL/PROVIDER for remote neural video, "
+                "or MIRA_CREATIVE_VISUAL_MODE=legacy for labeled stock/still collage."
             )[:360],
             "provider": self.provider_id,
             "pipeline": request.pipeline,
@@ -110,7 +118,7 @@ UnimplementedGenerationProvider = UnavailableNeuralVideoProvider
 def creative_visual_mode() -> str:
     """neural_only | legacy | auto (default)."""
     v = (os.getenv("MIRA_CREATIVE_VISUAL_MODE") or "auto").strip().lower()
-    if v in ("neural", "neural_only", "require_neural"):
+    if v in ("neural", "neural_only", "require_neural", "hf", "remote_t2v"):
         return "neural_only"
     if v in ("legacy", "collage", "stock"):
         return "legacy"
@@ -118,6 +126,12 @@ def creative_visual_mode() -> str:
 
 
 def get_neural_video_provider() -> VideoGenerationProvider:
+    """Return a real remote T2V provider when configured; else unavailable stub."""
+    from jarvis.mira.hf_video_provider import HuggingFaceTextToVideoProvider
+
+    hf = HuggingFaceTextToVideoProvider()
+    if hf.is_available():
+        return hf
     return UnavailableNeuralVideoProvider()
 
 
@@ -126,13 +140,13 @@ def get_generation_provider() -> VideoGenerationProvider:
     if _OVERRIDE is not None:
         return _OVERRIDE
     mode = creative_visual_mode()
-    neural = UnavailableNeuralVideoProvider()
+    neural = get_neural_video_provider()
     legacy = LegacyStockCollageProvider()
     if mode == "neural_only":
         return neural
     if mode == "legacy":
         return legacy
-    # auto: neural if available, else explicit legacy
+    # auto: remote neural if genuinely available, else explicit legacy
     if neural.is_available():
         return neural
     return legacy

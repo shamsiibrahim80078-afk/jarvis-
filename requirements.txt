@@ -47,6 +47,10 @@ imageio-ffmpeg>=0.5.0
 arabic-reshaper>=3.0.0
 python-bidi>=0.4.2
 
+# Mira remote neural text-to-video (Hugging Face Inference Providers)
+# Soft-required: creative engine works without this; HF T2V needs it + HF_TOKEN
+huggingface_hub>=0.27.0
+
 # Web server (localhost UI)
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
