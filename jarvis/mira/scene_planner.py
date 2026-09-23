@@ -334,6 +334,17 @@ _ACTIONS = (
     "subject interacts with space",
     "stakes rise on subject",
 )
+# Explanatory / neutral purposes: no suspense "stakes" vocabulary
+_ACTIONS_CLEAR = (
+    "subject enters frame",
+    "subject acts in place",
+    "environment supports the subject",
+    "meaningful detail reveals",
+    "subject turns / redirects",
+    "moment settles on subject",
+    "subject interacts with space",
+    "subject comes into clearer focus",
+)
 _ENVIRONMENTS = (
     "primary setting center",
     "edge of the same space",
@@ -344,6 +355,13 @@ _ENVIRONMENTS = (
     "open span of the same location",
     "intimate zone within the scene",
 )
+
+
+def _actions_for(purpose: str) -> tuple[str, ...]:
+    """Suspense/story/comedy may use dramatic stakes language; explainers may not."""
+    if purpose in ("suspense", "story", "comedy"):
+        return _ACTIONS
+    return _ACTIONS_CLEAR
 
 
 def _purpose_offset(purpose: str) -> int:
@@ -380,6 +398,7 @@ def build_shot_variety_plans(
     """Deterministic shot plans — vary framing/move/action/env; no adjacent repeats."""
     n = len(roles)
     off = _purpose_offset(purpose)
+    actions = _actions_for(purpose)
     plans: list[str] = []
     prev_sig: tuple[str, str] | None = None
 
@@ -389,20 +408,20 @@ def build_shot_variety_plans(
         else:
             fi = (i * 3 + off) % len(_FRAMINGS)
             mi = (i * 5 + off + 1) % len(_MOVEMENTS)
-            ai = (i * 2 + off + 2) % len(_ACTIONS)
+            ai = (i * 2 + off + 2) % len(actions)
             ei = (i * 4 + off) % len(_ENVIRONMENTS)
             # Role nudges for turn/payoff clarity
             if role in ("turn", "escalation"):
                 fi = (fi + 2) % len(_FRAMINGS)
                 mi = (mi + 1) % len(_MOVEMENTS)
             if role in ("payoff", "punchline", "conclusion"):
-                ai = (ai + 3) % len(_ACTIONS)
+                ai = (ai + 3) % len(actions)
                 ei = (ei + 1) % len(_ENVIRONMENTS)
             if role in ("information", "explanation"):
                 fi = _FRAMINGS.index("medium frame")
             framing = _FRAMINGS[fi]
             movement = _MOVEMENTS[mi]
-            action = _ACTIONS[ai]
+            action = actions[ai]
             environment = _ENVIRONMENTS[ei]
 
         plan = _format_shot_plan(framing, movement, action, environment)

@@ -109,15 +109,33 @@ def _scene_count_for(duration_sec: int, purpose: Purpose) -> int:
 
 
 _SCRIPT_MARKER = re.compile(
-    r"\b(?:script|narration|voice[\s-]?over|vo|lines?|beats?|say)\s*[:=]\s*(.+)$",
+    r"\b(?:script|narration|voice[\s-]?over|dialogue|vo\s*lines?)\s*[:=]\s*(.+)$",
     re.I,
 )
 _CHROME_SENTENCE = re.compile(
     r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\b|"
     r"\b(?:youtube\s+)?(?:shorts?|reels?|tiktok|video|clip|film)\b|"
-    r"\b\d+\s*(?:s|sec|secs|seconds)\b|"
+    r"\b\d+\s*(?:s|sec|secs|second|seconds)\b|"
     r"\b(?:9|16)\s*[:x]\s*(?:16|9)\b|"
     r"\b(?:captions?|subtitles?|mute|silent)\b",
+    re.I,
+)
+_DURATION_TOKEN = re.compile(
+    r"\b\d+\s*(?:s|sec|secs|second|seconds)\b",
+    re.I,
+)
+_ASPECT_TOKEN = re.compile(r"\b(?:9|16)\s*[:x]\s*(?:16|9)\b", re.I)
+_EXPLICIT_PACING_FAST = re.compile(
+    r"\b(?:fast[\s-]?paced|quick\s+cuts?|rapid\s+pacing|pacing\s*[:=]\s*fast)\b",
+    re.I,
+)
+_EXPLICIT_PACING_CLEAR = re.compile(
+    r"\b(?:clear\s+pacing|slow(?:er)?\s+pacing|explanatory\s+pacing|"
+    r"pacing\s*[:=]\s*clear|pace\s*[:=]\s*clear)\b",
+    re.I,
+)
+_EXPLICIT_PACING_MEDIUM = re.compile(
+    r"\b(?:medium\s+pacing|balanced\s+pacing|pacing\s*[:=]\s*medium)\b",
     re.I,
 )
 
@@ -125,7 +143,9 @@ _CHROME_SENTENCE = re.compile(
 def extract_script_lines(ask: str) -> list[str]:
     """Pull explicit user VO/story beats from free-form ask. Empty if none.
 
-    Does not invent content — only splits what the user already wrote.
+    Only when the ask clearly marks a script (Script:/Narration:/Dialogue:,
+    numbered dialogue beats, or quoted lines inside a script marker).
+    Ordinary quoted topic words are NOT treated as narration.
     """
     text = re.sub(r"\s+", " ", (ask or "").strip())
     if not text:
@@ -133,66 +153,55 @@ def extract_script_lines(ask: str) -> list[str]:
 
     found: list[str] = []
 
-    # 1) Explicit marker block: Script: A | B | C
+    # 1) Explicit marker block: Script: A | B | C  or  Narration: "a" "b"
     m = _SCRIPT_MARKER.search(text)
     if m:
         body = m.group(1).strip()
-        parts = re.split(r"\s*[|;]\s*|\s*\d+[.)]\s+", body)
-        for p in parts:
-            p = p.strip(" .,:;-")
-            if len(p) >= 6:
-                found.append(p[:160])
+        quoted = re.findall(r"[\"“”]([^\"“”]{6,160})[\"“”]", body)
+        if len(quoted) >= 1:
+            found = [q.strip()[:160] for q in quoted if q.strip()]
+        if not found:
+            parts = re.split(r"\s*[|;]\s*|\s*\d+[.)]\s+", body)
+            for p in parts:
+                p = p.strip(" .,:;-")
+                if len(p) >= 6:
+                    found.append(p[:160])
 
-    # 2) Numbered beats anywhere: 1. … 2. …
+    # 2) Numbered dialogue/script beats (require ≥2 to avoid lone outlines)
     if not found:
         numbered = re.findall(
             r"(?:^|\s)\d+[.)]\s+([^|;]+?)(?=(?:\s+\d+[.)]\s+|$))",
             text,
         )
+        cleaned = []
         for p in numbered:
             p = p.strip(" .,:;-")
             if len(p) >= 6 and not _CHROME_SENTENCE.search(p):
-                found.append(p[:160])
+                cleaned.append(p[:160])
+        if len(cleaned) >= 2:
+            found = cleaned
 
-    # 3) Quoted lines
+    # 3) Explicit story/plot/narration body with multiple sentences (marker required)
     if not found:
-        for q in re.findall(r"[\"“”']([^\"“”']{6,160})[\"“”']", text):
-            q = q.strip()
-            if q and not _CHROME_SENTENCE.search(q):
-                found.append(q[:160])
-
-    # 4) Multi-sentence narrative after request chrome (user wrote a mini-story)
-    if not found:
-        stripped = re.sub(
-            r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\s+"
-            r"(?:me\s+)?(?:an?\s+)?(?:mute\s+|silent\s+)?"
-            r"(?:cinematic\s+|funny\s+|realistic\s+|suspenseful\s+)?"
-            r"(?:youtube\s+)?(?:shorts?|reels?|video|clip|film)\s+"
-            r"(?:about|of|on|for|with\s+script)?\s*",
-            "",
-            text,
-            flags=re.I,
-        ).strip(" .,:;-")
-        # Prefer content after an em-dash / "story:" style separator
         story_m = re.search(
-            r"(?:story|plot|narration)\s*[:=]\s*(.+)$",
-            stripped,
+            r"\b(?:story|plot)\s*[:=]\s*(.+)$",
+            text,
             re.I,
         )
-        candidate = story_m.group(1).strip() if story_m else stripped
-        sents = [
-            s.strip(" .,:;-")
-            for s in re.split(r"(?<=[.!?])\s+", candidate)
-            if s.strip()
-        ]
-        usable = [
-            s[:160]
-            for s in sents
-            if len(s) >= 12 and not _CHROME_SENTENCE.search(s)
-        ]
-        # Need clear multi-beat user writing (not a single topic noun phrase)
-        if len(usable) >= 2:
-            found = usable
+        if story_m:
+            candidate = story_m.group(1).strip()
+            sents = [
+                s.strip(" .,:;-")
+                for s in re.split(r"(?<=[.!?])\s+", candidate)
+                if s.strip()
+            ]
+            usable = [
+                s[:160]
+                for s in sents
+                if len(s) >= 12 and not _CHROME_SENTENCE.search(s)
+            ]
+            if len(usable) >= 2:
+                found = usable
 
     # Dedupe preserve order
     out: list[str] = []
@@ -203,6 +212,66 @@ def extract_script_lines(ask: str) -> list[str]:
             seen.add(key)
             out.append(line)
     return out[:10]
+
+
+def _core_topic_from_ask(raw: str) -> str:
+    """Extract subject topic; strip request chrome, duration, and aspect syntax."""
+    text = re.sub(r"\s+", " ", (raw or "").strip())
+    if not text:
+        return "cinematic scene"
+
+    # Drop explicit script/narration blocks from the topic candidate
+    text = _SCRIPT_MARKER.sub("", text).strip(" .,:;-") or text
+    # Drop numbered beat tails that look like script lists
+    text = re.sub(r"(?:^|\s)\d+[.)]\s+.+$", "", text).strip(" .,:;-") or text
+
+    # Prefer the phrase after about/of/on/for (request syntax)
+    about = re.search(
+        r"\b(?:about|of|on|for)\s+(.+)$",
+        text,
+        re.I,
+    )
+    if about:
+        core = about.group(1).strip(" .,:;-")
+    else:
+        core = re.sub(
+            r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\s+"
+            r"(?:me\s+)?(?:an?\s+)?",
+            "",
+            text,
+            flags=re.I,
+        ).strip(" .,:;-") or text
+
+    # Drop trailing explicit pacing / audio chrome from the subject phrase
+    core = re.sub(
+        r"\s+(?:with\s+)?(?:clear\s+pacing|slow(?:er)?\s+pacing|explanatory\s+pacing|"
+        r"fast[\s-]?paced|quick\s+cuts?|medium\s+pacing|balanced\s+pacing|"
+        r"pacing\s*[:=]\s*\w+|captions?|subtitles?|music|soundtrack)\s*$",
+        "",
+        core,
+        flags=re.I,
+    ).strip(" .,:;-")
+
+    # Remove duration / aspect request tokens
+    core = _DURATION_TOKEN.sub(" ", core)
+    core = _ASPECT_TOKEN.sub(" ", core)
+    # Leading media-type chrome still stuck before the subject
+    core = re.sub(
+        r"^(?:(?:an?\s+)?(?:mute|silent|cinematic|funny|realistic|suspenseful|clear)\s+)*"
+        r"(?:youtube\s+)?(?:shorts?|reels?|tiktok|video|clip|film|story|explainer|promo)\s+",
+        "",
+        core,
+        flags=re.I,
+    ).strip(" .,:;-")
+    # Orphan "video/story" words left as pure chrome
+    core = re.sub(
+        r"^(?:shorts?|reels?|tiktok|video|clip|film|story|explainer|promo)\b\s*",
+        "",
+        core,
+        flags=re.I,
+    ).strip(" .,:;-")
+    core = re.sub(r"\s+", " ", core).strip(" .,:;-")
+    return (core or text)[:200]
 
 
 def build_creative_brief(
@@ -241,9 +310,11 @@ def build_creative_brief(
             dur = 30
 
     # Explicit duration/aspect in the ask win
-    dm = re.search(r"(\d+)\s*(?:s|sec|secs|seconds)\b", raw, re.I)
+    dm = _DURATION_TOKEN.search(raw)
     if dm:
-        dur = max(8, min(180, int(dm.group(1))))
+        num_m = re.search(r"(\d+)", dm.group(0))
+        if num_m:
+            dur = max(8, min(180, int(num_m.group(1))))
     if re.search(r"\b(9\s*[:x]\s*16|vertical|shorts?|reels?|tiktok)\b", raw, re.I):
         asp = "9:16"
     elif re.search(r"\b(16\s*[:x]\s*9|landscape|widescreen|youtube\s+video)\b", raw, re.I):
@@ -257,35 +328,15 @@ def build_creative_brief(
     pacing = "fast" if purpose in ("comedy", "suspense") or dur <= 20 else "medium"
     if purpose == "explainer":
         pacing = "clear"
-    # Explicit pacing words in ask win
-    if re.search(r"\b(fast[\s-]?paced|quick\s+cuts?|rapid)\b", raw, re.I):
+    # Only explicit pacing instructions override (not topic adjectives like "clear skies")
+    if _EXPLICIT_PACING_FAST.search(raw):
         pacing = "fast"
-    elif re.search(r"\b(clear|slow(?:er)?|explanatory\s+pacing)\b", raw, re.I):
+    elif _EXPLICIT_PACING_CLEAR.search(raw):
         pacing = "clear"
-    elif re.search(r"\b(medium\s+pacing|balanced\s+pacing)\b", raw, re.I):
+    elif _EXPLICIT_PACING_MEDIUM.search(raw):
         pacing = "medium"
 
-    # Strip chrome for topic core (do not use as VO when script_lines exist)
-    topic = re.sub(
-        r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\s+"
-        r"(?:me\s+)?(?:an?\s+)?(?:mute\s+|silent\s+)?"
-        r"(?:cinematic\s+|funny\s+|realistic\s+|suspenseful\s+|clear\s+)?"
-        r"(?:youtube\s+)?"
-        r"(?:shorts?|reels?|video|clip|film|story|explainer|promo)?\s*"
-        r"(?:about|of|on|for)?\s*",
-        "",
-        raw,
-        flags=re.I,
-    ).strip(" .,:;-") or raw
-    # Drop trailing script marker block from topic display
-    topic = _SCRIPT_MARKER.sub("", topic).strip(" .,:;-") or topic
-    topic = re.sub(
-        r"\b\d+\s*(?:s|sec|secs|seconds)\b|\b(?:9|16)\s*[:x]\s*(?:16|9)\b",
-        " ",
-        topic,
-        flags=re.I,
-    )
-    topic = re.sub(r"\s+", " ", topic).strip() or raw
+    topic = _core_topic_from_ask(raw)
 
     n = _scene_count_for(dur, purpose)
     continuity = (
@@ -318,3 +369,4 @@ def build_creative_brief(
         script_lines=user_lines,
         extras={"audio_mode": audio_mode},
     )
+

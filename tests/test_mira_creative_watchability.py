@@ -135,8 +135,9 @@ def test_explicit_user_script_lines_preserved():
 
 
 def test_quoted_user_lines_preserved():
+    """Quoted lines inside an explicit Script/Narration marker are preserved."""
     ask = (
-        'Create a story about a door: "The door opens." '
+        'Create a story about a door. Script: "The door opens." '
         '"A light flickers." "Someone steps through."'
     )
     brief = build_creative_brief(ask, duration_sec=30)
@@ -206,3 +207,77 @@ def test_hf_scene_cap_honesty_still_intact(monkeypatch):
         assert "honesty=scene_cap_partial_generation" in (out.get("notes") or [])
     finally:
         set_generation_provider(None)
+
+
+# --- Phase 5C-2 edge-case hardening ---
+
+
+def test_topic_strips_duration_and_video_chrome():
+    brief = build_creative_brief("Make a 30 second video about Mars", duration_sec=30)
+    assert brief.topic.strip().lower() == "mars"
+    assert "30" not in brief.topic
+    assert "second" not in brief.topic.lower()
+    assert "video" not in brief.topic.lower()
+    assert brief.duration_sec == 30
+    assert "mars" in brief.original_ask.lower()
+
+
+def test_clear_night_skies_not_false_pacing():
+    brief = build_creative_brief("Make a video about clear night skies", duration_sec=30)
+    assert "clear night skies" in brief.topic.lower()
+    # Ordinary topic adjective must not force clear pacing
+    assert brief.pacing != "clear"
+    assert brief.purpose != "explainer"
+    # Explicit instruction still works
+    brief2 = build_creative_brief(
+        "Make a video about Mars with clear pacing",
+        duration_sec=30,
+    )
+    assert brief2.pacing == "clear"
+    assert brief2.topic.strip().lower() == "mars"
+
+
+def test_quoted_topic_is_not_false_script():
+    ask = "Make a funny video about 'office workers' dancing"
+    brief = build_creative_brief(ask, duration_sec=30)
+    assert not brief.script_lines
+    assert "office" in brief.topic.lower()
+    plan = plan_scenes(brief)
+    assert all(s.narration_source != "user_script" for s in plan.scenes if s.narration)
+    # Narration is template comedy, not just the quoted noun
+    assert plan.scenes[0].narration_source == "template"
+    assert "office" in plan.scenes[0].narration.lower() or "worker" in " ".join(
+        s.narration.lower() for s in plan.scenes
+    )
+
+
+def test_explainer_shots_avoid_stakes_language():
+    brief = build_creative_brief("Make an explainer video about black holes", duration_sec=40)
+    assert brief.purpose == "explainer"
+    plan = plan_scenes(brief)
+    for sc in plan.scenes:
+        low = (sc.shot_plan or "").lower()
+        assert "stakes" not in low
+        assert "threat" not in low
+    # Suspense may still use stronger language
+    sus = build_creative_brief(
+        "Create a suspenseful story about an abandoned house",
+        duration_sec=30,
+    )
+    plan_s = plan_scenes(sus)
+    blob = " ".join((s.shot_plan or "").lower() for s in plan_s.scenes)
+    assert "stakes" in blob or "threat" in blob or "partial reveal" in blob
+
+
+def test_explicit_script_still_preserved_after_5c2():
+    ask = (
+        "Make a 30 second video about Mars. "
+        "Script: First we see the red dust | Then the rover wakes | "
+        "Finally Earth calls home"
+    )
+    brief = build_creative_brief(ask, duration_sec=30)
+    assert brief.topic.strip().lower() == "mars"
+    assert len(brief.script_lines) >= 3
+    plan = plan_scenes(brief)
+    assert plan.scenes[0].narration == brief.script_lines[0][:160]
+    assert plan.scenes[0].narration_source == "user_script"
