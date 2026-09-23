@@ -35,6 +35,8 @@ class CreativeBrief:
     continuity: str = "same subject and setting across scenes"
     original_ask: str = ""
     search_hints: list[str] = field(default_factory=list)
+    # Explicit user VO / story beats (Phase 5C-1) — planner must not overwrite these
+    script_lines: list[str] = field(default_factory=list)
     extras: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -106,6 +108,103 @@ def _scene_count_for(duration_sec: int, purpose: Purpose) -> int:
     return 8
 
 
+_SCRIPT_MARKER = re.compile(
+    r"\b(?:script|narration|voice[\s-]?over|vo|lines?|beats?|say)\s*[:=]\s*(.+)$",
+    re.I,
+)
+_CHROME_SENTENCE = re.compile(
+    r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\b|"
+    r"\b(?:youtube\s+)?(?:shorts?|reels?|tiktok|video|clip|film)\b|"
+    r"\b\d+\s*(?:s|sec|secs|seconds)\b|"
+    r"\b(?:9|16)\s*[:x]\s*(?:16|9)\b|"
+    r"\b(?:captions?|subtitles?|mute|silent)\b",
+    re.I,
+)
+
+
+def extract_script_lines(ask: str) -> list[str]:
+    """Pull explicit user VO/story beats from free-form ask. Empty if none.
+
+    Does not invent content — only splits what the user already wrote.
+    """
+    text = re.sub(r"\s+", " ", (ask or "").strip())
+    if not text:
+        return []
+
+    found: list[str] = []
+
+    # 1) Explicit marker block: Script: A | B | C
+    m = _SCRIPT_MARKER.search(text)
+    if m:
+        body = m.group(1).strip()
+        parts = re.split(r"\s*[|;]\s*|\s*\d+[.)]\s+", body)
+        for p in parts:
+            p = p.strip(" .,:;-")
+            if len(p) >= 6:
+                found.append(p[:160])
+
+    # 2) Numbered beats anywhere: 1. … 2. …
+    if not found:
+        numbered = re.findall(
+            r"(?:^|\s)\d+[.)]\s+([^|;]+?)(?=(?:\s+\d+[.)]\s+|$))",
+            text,
+        )
+        for p in numbered:
+            p = p.strip(" .,:;-")
+            if len(p) >= 6 and not _CHROME_SENTENCE.search(p):
+                found.append(p[:160])
+
+    # 3) Quoted lines
+    if not found:
+        for q in re.findall(r"[\"“”']([^\"“”']{6,160})[\"“”']", text):
+            q = q.strip()
+            if q and not _CHROME_SENTENCE.search(q):
+                found.append(q[:160])
+
+    # 4) Multi-sentence narrative after request chrome (user wrote a mini-story)
+    if not found:
+        stripped = re.sub(
+            r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\s+"
+            r"(?:me\s+)?(?:an?\s+)?(?:mute\s+|silent\s+)?"
+            r"(?:cinematic\s+|funny\s+|realistic\s+|suspenseful\s+)?"
+            r"(?:youtube\s+)?(?:shorts?|reels?|video|clip|film)\s+"
+            r"(?:about|of|on|for|with\s+script)?\s*",
+            "",
+            text,
+            flags=re.I,
+        ).strip(" .,:;-")
+        # Prefer content after an em-dash / "story:" style separator
+        story_m = re.search(
+            r"(?:story|plot|narration)\s*[:=]\s*(.+)$",
+            stripped,
+            re.I,
+        )
+        candidate = story_m.group(1).strip() if story_m else stripped
+        sents = [
+            s.strip(" .,:;-")
+            for s in re.split(r"(?<=[.!?])\s+", candidate)
+            if s.strip()
+        ]
+        usable = [
+            s[:160]
+            for s in sents
+            if len(s) >= 12 and not _CHROME_SENTENCE.search(s)
+        ]
+        # Need clear multi-beat user writing (not a single topic noun phrase)
+        if len(usable) >= 2:
+            found = usable
+
+    # Dedupe preserve order
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in found:
+        key = re.sub(r"\s+", " ", line.lower()).strip()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(line)
+    return out[:10]
+
+
 def build_creative_brief(
     ask: str,
     *,
@@ -113,6 +212,7 @@ def build_creative_brief(
     aspect: str | None = None,
     search_hints: list[str] | None = None,
     audio_mode: str = "voice",
+    script_lines: list[str] | None = None,
 ) -> CreativeBrief:
     """Infer a usable CreativeBrief from a free-form user ask (no interrogation)."""
     raw = re.sub(r"\s+", " ", (ask or "").strip())
@@ -157,18 +257,28 @@ def build_creative_brief(
     pacing = "fast" if purpose in ("comedy", "suspense") or dur <= 20 else "medium"
     if purpose == "explainer":
         pacing = "clear"
+    # Explicit pacing words in ask win
+    if re.search(r"\b(fast[\s-]?paced|quick\s+cuts?|rapid)\b", raw, re.I):
+        pacing = "fast"
+    elif re.search(r"\b(clear|slow(?:er)?|explanatory\s+pacing)\b", raw, re.I):
+        pacing = "clear"
+    elif re.search(r"\b(medium\s+pacing|balanced\s+pacing)\b", raw, re.I):
+        pacing = "medium"
 
-    # Strip chrome for topic core
+    # Strip chrome for topic core (do not use as VO when script_lines exist)
     topic = re.sub(
         r"^(?:mira[,:]?\s*)?(?:please\s+)?(?:make|create|generate|produce)\s+"
         r"(?:me\s+)?(?:an?\s+)?(?:mute\s+|silent\s+)?"
-        r"(?:cinematic\s+|funny\s+|realistic\s+|suspenseful\s+)?"
-        r"(?:youtube\s+)?(?:shorts?|reels?|video|clip|film)\s+"
+        r"(?:cinematic\s+|funny\s+|realistic\s+|suspenseful\s+|clear\s+)?"
+        r"(?:youtube\s+)?"
+        r"(?:shorts?|reels?|video|clip|film|story|explainer|promo)?\s*"
         r"(?:about|of|on|for)?\s*",
         "",
         raw,
         flags=re.I,
     ).strip(" .,:;-") or raw
+    # Drop trailing script marker block from topic display
+    topic = _SCRIPT_MARKER.sub("", topic).strip(" .,:;-") or topic
     topic = re.sub(
         r"\b\d+\s*(?:s|sec|secs|seconds)\b|\b(?:9|16)\s*[:x]\s*(?:16|9)\b",
         " ",
@@ -181,6 +291,12 @@ def build_creative_brief(
     continuity = (
         f"Keep visual continuity on: {topic}. Same world, lighting family, and subject identity."
     )
+
+    user_lines: list[str] = []
+    if script_lines:
+        user_lines = [str(s).strip()[:160] for s in script_lines if str(s).strip()][:10]
+    if not user_lines:
+        user_lines = extract_script_lines(raw)
 
     return CreativeBrief(
         topic=topic[:200],
@@ -199,5 +315,6 @@ def build_creative_brief(
         continuity=continuity,
         original_ask=raw[:300],
         search_hints=[str(h).strip()[:80] for h in (search_hints or []) if str(h).strip()][:8],
+        script_lines=user_lines,
         extras={"audio_mode": audio_mode},
     )

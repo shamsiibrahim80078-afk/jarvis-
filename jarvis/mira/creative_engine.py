@@ -68,8 +68,10 @@ def run_creative_video(
     plan = plan_scenes(brief)
     notes = [
         "creative_engine=phase5a",
+        "creative_engine=phase5c1",
         f"purpose={brief.purpose}",
         f"structure={plan.structure}",
+        f"pacing={brief.pacing}",
         f"visual_mode={creative_visual_mode()}",
         f"scenes_planned={len(plan.scenes)}",
     ]
