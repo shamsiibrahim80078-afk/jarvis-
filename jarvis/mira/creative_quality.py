@@ -85,11 +85,24 @@ def validate_creative_output(
         if sz < 20_000:
             issues.append("file_too_small")
         dur = _probe_duration(path)
+        if dur <= 0:
+            try:
+                dur = float(result.get("actual_duration_sec") or 0)
+            except (TypeError, ValueError):
+                dur = 0.0
         if dur < 2.0:
             issues.append("duration_too_short")
         target = max(8, int(expected_duration_sec or 30))
+        # Honest tolerance: large slack — encoder/VO may not hit exact request
         if dur > 0 and abs(dur - target) > max(12.0, target * 0.75):
             issues.append("duration_far_from_request")
+        # Prefer reported planned vs actual when present (informational soft check)
+        try:
+            planned_sum = float(result.get("planned_duration_sec") or 0)
+        except (TypeError, ValueError):
+            planned_sum = 0.0
+        if planned_sum >= 4.0 and dur > 0 and abs(dur - planned_sum) > max(10.0, planned_sum * 0.6):
+            issues.append("duration_far_from_plan")
         w, h = _probe_wh(path)
         got = _aspect_bucket(w, h)
         want = (expected_aspect or "").strip()
@@ -105,6 +118,11 @@ def validate_creative_output(
         missing = [s for s in expected if s not in handled]
         if missing:
             issues.append(f"scenes_missing={missing[:4]}")
+        # Story order: handled should follow expected order for shared ids
+        handled_in_expected = [s for s in handled if s in expected]
+        expected_prefix = [s for s in expected if s in handled_in_expected]
+        if handled_in_expected and expected_prefix and handled_in_expected != expected_prefix:
+            issues.append("scenes_out_of_order")
     elif expected and not handled:
         issues.append("scenes_not_reported")
 
@@ -136,6 +154,21 @@ def validate_creative_output(
             issues.append("false_neural_claim")
         if kind == "legacy_stock_collage":
             issues.append("false_neural_claim")
+
+    # Caption honesty: requested burn that failed must be visible
+    if result.get("captions_requested") and (
+        result.get("captions_burn_failed")
+        or result.get("captions_status") == "requested_but_unavailable"
+    ):
+        issues.append("captions_requested_but_unavailable")
+    notes_blob = " ".join(str(n) for n in (result.get("notes") or []))
+    if "captions=on" in notes_blob and (
+        result.get("captions_burn_failed")
+        or "requested_but_unavailable" in notes_blob
+    ):
+        # Conflicting claim: treated as unavailable (already flagged) — strip false success
+        if "captions_requested_but_unavailable" not in issues:
+            issues.append("captions_requested_but_unavailable")
 
     ok = not issues
     return {
