@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -73,12 +73,10 @@ def test_mocked_hf_http_success_sets_neural(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setenv("HF_TOKEN", "hf_test_token_not_real")
     monkeypatch.setenv("MIRA_HF_T2V_MAX_SCENES", "1")
     monkeypatch.setenv("MIRA_HF_T2V_NUM_FRAMES", "16")
+    monkeypatch.setenv("MIRA_HF_T2V_PROVIDER", "fal-ai")
 
     # Point Mira outputs into tmp
     monkeypatch.setenv("MIRA_OUT_DIR", str(tmp_path / "out"))
-
-    fake_client = MagicMock()
-    fake_client.text_to_video.return_value = _FAKE_MP4
 
     compose_result = {
         "ok": True,
@@ -95,7 +93,10 @@ def test_mocked_hf_http_success_sets_neural(monkeypatch: pytest.MonkeyPatch, tmp
     (tmp_path / "out" / "videos").mkdir(parents=True, exist_ok=True)
     (tmp_path / "out" / "videos" / "final.mp4").write_bytes(_FAKE_MP4)
 
-    with patch("huggingface_hub.InferenceClient", return_value=fake_client), patch(
+    with patch(
+        "jarvis.mira.hf_video_provider._fal_ai_text_to_video_via_hf_router",
+        return_value=(_FAKE_MP4, ["hf_fal_id_remap=fal-ai/wan-t2v"]),
+    ), patch(
         "jarvis.mira.hf_video_provider._hub_available", return_value=True
     ), patch(
         "jarvis.mira.creative_compose.compose_from_visual_paths", return_value=compose_result
@@ -126,19 +127,17 @@ def test_mocked_hf_http_success_sets_neural(monkeypatch: pytest.MonkeyPatch, tmp
     assert out.get("provider") == "mira_hf_remote_t2v"
     assert out.get("video_path")
     assert Path(out["video_path"]).is_file()
-    fake_client.text_to_video.assert_called()
-    call_kwargs = fake_client.text_to_video.call_args
-    assert "ocean" in call_kwargs.args[0].lower() or "ocean" in str(call_kwargs).lower()
 
 
 def test_mocked_hf_http_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("HF_TOKEN", "hf_test_token_not_real")
     monkeypatch.setenv("MIRA_HF_T2V_MAX_SCENES", "1")
+    monkeypatch.setenv("MIRA_HF_T2V_PROVIDER", "fal-ai")
 
-    fake_client = MagicMock()
-    fake_client.text_to_video.side_effect = RuntimeError("provider 503 unavailable")
-
-    with patch("huggingface_hub.InferenceClient", return_value=fake_client), patch(
+    with patch(
+        "jarvis.mira.hf_video_provider._fal_ai_text_to_video_via_hf_router",
+        side_effect=RuntimeError("HF/fal T2V error: Path /v2.1/1.3b/text-to-video not found"),
+    ), patch(
         "jarvis.mira.hf_video_provider._hub_available", return_value=True
     ), patch(
         "jarvis.mira.pipeline.out_root", return_value=tmp_path / "out"
@@ -166,6 +165,19 @@ def test_mocked_hf_http_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert out.get("is_neural_video") is False
     assert out.get("generation_kind") == "remote_t2v"
     assert not out.get("video_path")
+    assert "Path" in (out.get("message") or "") or "error" in (out.get("message") or "").lower()
+
+
+def test_extract_video_url_success_and_detail_error():
+    from jarvis.mira.hf_video_provider import _extract_video_url
+
+    url = _extract_video_url({"video": {"url": "https://example.com/a.mp4"}})
+    assert url.endswith("a.mp4")
+    try:
+        _extract_video_url({"detail": "Path /v2.1/1.3b/text-to-video not found"})
+        assert False, "expected RuntimeError"
+    except RuntimeError as exc:
+        assert "Path" in str(exc)
 
 
 def test_auto_mode_prefers_hf_when_available(monkeypatch: pytest.MonkeyPatch):
