@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus Agents — Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/workspace.css?v=1" />
+</head>
+<body>
+  <div class="wx">
+    <header class="wx-top">
+      <div class="wx-brand">
+        <a class="wx-back" href="/">← Jarvis</a>
+        <div>
+          <h1>Nexus Company</h1>
+          <p class="wx-sub">You're the owner · Jarvis manages · Agents work</p>
+        </div>
+      </div>
+      <div class="wx-top-meta">
+        <span class="wx-pill" id="wx-live"><i></i> LIVE FLOOR</span>
+        <span class="wx-clock" id="wx-clock">--:--:--</span>
+      </div>
+    </header>
+
+    <main class="wx-grid">
+      <section class="wx-col agents-col">
+        <h2>Floor</h2>
+        <div id="agent-cards" class="agent-cards"></div>
+        <div class="station-note">Restaurant model: Jarvis = manager · Mira = studio chef · more stations later</div>
+      </section>
+
+      <section class="wx-col feed-col">
+        <h2>Live floor chat</h2>
+        <div id="crew-chat" class="crew-chat"></div>
+        <form id="owner-form" class="owner-form">
+          <input id="owner-input" type="text" placeholder="Owner → Jarvis: make a short about coffee facts" autocomplete="off" />
+          <button type="submit">Assign</button>
+        </form>
+      </section>
+
+      <section class="wx-col tasks-col">
+        <h2>Task board</h2>
+        <div id="task-board" class="task-board"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/js/workspace.js?v=1"></script>
+</body>
+</html>

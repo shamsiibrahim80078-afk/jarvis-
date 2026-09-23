@@ -1,0 +1,53 @@
+# AI brains - free providers use OpenAI-compatible API
+openai>=1.40.0
+anthropic>=0.40.0
+google-generativeai>=0.8.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Voice input (STT)
+SpeechRecognition>=3.10.0
+PyAudio>=0.2.14
+
+# Voice output (TTS)
+edge-tts>=6.1.0
+
+# Audio playback
+pygame>=2.5.0
+
+# PC control
+pyautogui>=0.9.54
+psutil>=6.0.0
+pygetwindow>=0.0.9
+
+# Web & utilities
+requests>=2.31.0
+httpx>=0.27.0
+pydantic>=2.0.0
+rich>=13.0.0
+pyperclip>=1.8.0
+
+# Browser automation (API key hunter)
+playwright>=1.48.0
+
+# Google Calendar (OAuth + Calendar API)
+google-api-python-client>=2.140.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+python-dateutil>=2.9.0
+
+# Screen share capture
+mss>=9.0.0
+Pillow>=10.0.0
+
+# Mira video/image pipeline (Ken Burns assemble)
+moviepy>=1.0.3
+imageio-ffmpeg>=0.5.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
+
+# Web server (localhost UI)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12

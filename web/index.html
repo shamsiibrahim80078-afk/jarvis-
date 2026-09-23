@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J.A.R.V.I.S</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=70" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="scanlines"></div>
+
+  <div class="hud" id="hud">
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-icon">◈</span>
+        <div>
+          <h1>J.A.R.V.I.S</h1>
+          <span class="mk-tag">JUST A RATHER VERY INTELLIGENT SYSTEM</span>
+        </div>
+      </div>
+      <div class="top-center">
+        <span id="clock" class="clock">--:--</span>
+        <span id="date" class="date"></span>
+      </div>
+      <div class="top-right">
+        <div class="status-pill" id="connection-status"><span class="dot online"></span> ONLINE</div>
+        <div class="status-pill agent" id="agent-status">
+          <span class="dot" id="state-dot"></span> <span id="state-text">STANDBY</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <aside class="panel left-panel">
+        <div class="panel-header">SYSTEM</div>
+        <canvas id="radar" width="180" height="180"></canvas>
+        <div class="stats-grid">
+          <div>
+            <span class="stat-label">CPU</span>
+            <span class="stat-value" id="cpu">--</span>
+            <div class="bar"><div class="bar-fill" id="cpu-bar"></div></div>
+          </div>
+          <div>
+            <span class="stat-label">RAM</span>
+            <span class="stat-value" id="ram">--</span>
+            <div class="bar"><div class="bar-fill" id="ram-bar"></div></div>
+          </div>
+          <div>
+            <span class="stat-label">DISK</span>
+            <span class="stat-value" id="disk">--</span>
+            <div class="bar"><div class="bar-fill" id="disk-bar"></div></div>
+          </div>
+          <div>
+            <span class="stat-label">BATTERY</span>
+            <span class="stat-value" id="battery">N/A</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="panel center-panel">
+        <div class="panel-header">
+          <span>COMMAND</span>
+          <span id="user-greeting">OWNER: IBRAHIM</span>
+        </div>
+        <div class="chat-log" id="chat-log"></div>
+        <div class="input-row">
+          <button class="mic-btn" id="mic-btn" title="Voice">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-2.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+          </button>
+          <input type="text" id="command-input" placeholder="Ask Jarvis… e.g. create a full video of crypto rafts" autocomplete="off" />
+          <button class="send-btn" id="send-btn">SEND</button>
+        </div>
+        <div class="mira-upload-row">
+          <input type="file" id="mira-upload-input" accept="video/*,image/*" multiple hidden />
+          <button type="button" class="btn-sm" id="mira-upload-btn">MIRA UPLOAD</button>
+          <button class="btn-sm" id="briefing-btn">BRIEFING</button>
+          <span class="mira-upload-status" id="mira-upload-status"></span>
+        </div>
+        <p class="hint" id="voice-hint">Say “Hey Jarvis” then your command</p>
+      </main>
+
+      <aside class="panel right-panel">
+        <div class="panel-header">MODULES</div>
+        <ul class="module-list" id="module-list"></ul>
+        <div class="panel-header" style="margin-top:14px">PLUGINS</div>
+        <ul class="plugin-list" id="plugin-list"></ul>
+        <div class="panel-header" style="margin-top:14px">SCREEN</div>
+        <p id="share-status">Idle</p>
+        <button id="share-my-screen-btn" class="btn-sm" type="button">SHARE MY SCREEN</button>
+        <button id="jarvis-screen-btn" class="btn-sm" type="button">JARVIS VIEW</button>
+        <div id="jarvis-screen-panel" hidden>
+          <button id="jarvis-screen-close" type="button" class="btn-sm">CLOSE</button>
+          <img id="jarvis-screen-img" alt="Jarvis screen" />
+          <p id="jarvis-screen-placeholder">Waiting…</p>
+          <span id="jarvis-screen-meta"></span>
+        </div>
+        <div id="agent-screens" hidden></div>
+      </aside>
+    </div>
+
+    <footer class="footer">
+      <span>LOCALHOST:8765</span>
+      <span>OWNER: IBRAHIM</span>
+      <span>MARK I · IRON MAN HUD</span>
+    </footer>
+  </div>
+
+  <script src="/static/js/app.js?v=74"></script>
+</body>
+</html>

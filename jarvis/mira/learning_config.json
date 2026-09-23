@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "kind": "mira_learning_adapter",
+  "disclaimer": "Learns from your ratings in Jarvis. Not foundation-model training.",
+  "preferred_styles": ["cinematic", "photoreal"],
+  "negative_from_downvotes": [],
+  "prompt_suffixes_from_upvotes": [],
+  "rated_examples": 0,
+  "updated_at": null
+}

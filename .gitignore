@@ -1,0 +1,56 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+config/api_keys.json
+**/credentials.json
+**/google_credentials.json
+**/youtube_token.json
+**/token.json
+**/identity_session.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime / local state (do not back up live data)
+data/**
+!data/.gitkeep
+*.log
+temp/
+cache/
+.tmp/
+
+# Generated / temp media
+*.mp3
+*.wav
+*.mp4
+*.webm
+*.mov
+*.mkv
+*TEMP_MPY*
+
+# Editor / local tooling
+.cursor/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini

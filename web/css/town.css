@@ -1,0 +1,312 @@
+/* Agent Town — full-bleed living office (Stonic-style) */
+:root {
+  --pixel: "Press Start 2P", monospace;
+}
+
+.hud-town {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 6px;
+  gap: 6px;
+}
+
+.town-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "brand status"
+    "cmd cmd";
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: rgba(8, 18, 28, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+}
+
+.town-top .brand { grid-area: brand; }
+.town-top .top-right { grid-area: status; }
+.town-top .town-command { grid-area: cmd; }
+
+.town-top .brand h1 {
+  font-size: 0.95rem;
+  margin: 0;
+  letter-spacing: 0.18em;
+}
+
+.town-top .brand-icon {
+  font-size: 1.2rem;
+}
+
+.town-top .mk-tag {
+  font-size: 0.58rem;
+}
+
+.town-top .clock {
+  font-size: 0.8rem !important;
+  white-space: nowrap;
+}
+
+.town-top .top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.town-top .status-pill {
+  padding: 4px 8px;
+  font-size: 0.62rem;
+}
+
+.town-command {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.town-command .mic-btn {
+  flex-shrink: 0;
+}
+
+.town-command .send-btn {
+  flex-shrink: 0;
+  min-width: 88px;
+}
+
+.town-command input {
+  flex: 1;
+  background: #050a10;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+}
+
+.town-command input:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+
+.town-floor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.town-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  border: 2px solid #22d3ee55;
+  border-radius: 8px;
+  overflow: hidden;
+  /* Match campus floor so any edge is never empty black */
+  background: #1e2c3e;
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), 0 0 24px rgba(34, 211, 238, 0.08);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+#town-canvas {
+  position: absolute;
+  display: block;
+  image-rendering: auto;
+  cursor: crosshair;
+  z-index: 1;
+}
+
+.crew-board {
+  width: 230px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(8, 14, 22, 0.96);
+  border: 1px solid #fbbf2455;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.crew-board h3 {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 9px;
+  color: #fbbf24;
+  letter-spacing: 0.06em;
+}
+
+.crew-board-sub {
+  margin: 0 0 4px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+#crew-board-list {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crew-row {
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: 6px;
+  padding: 5px 6px;
+  border-left: 2px solid var(--acc, #22d3ee);
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 4px;
+}
+
+.crew-row.boss {
+  background: rgba(69, 40, 10, 0.55);
+  border-left-width: 3px;
+}
+
+.crew-row.busy .crew-task {
+  color: #fde047;
+}
+
+.crew-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--acc, #22d3ee);
+  box-shadow: 0 0 6px var(--acc, #22d3ee);
+}
+
+.crew-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.crew-name em {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 9px;
+  color: var(--acc, #67e8f9);
+  margin-left: 4px;
+}
+
+.crew-job {
+  font-size: 10px;
+  color: #cbd5e1;
+}
+
+.crew-task {
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .crew-board { width: 180px; }
+}
+
+.town-label {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 5;
+  font-family: var(--pixel);
+  font-size: 8px;
+  color: #67e8f9;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 6px #22d3ee, 1px 1px 0 #000;
+  pointer-events: none;
+}
+
+#town-canvas {
+  position: absolute;
+  display: block;
+  image-rendering: auto;
+  cursor: crosshair;
+  z-index: 1;
+}
+
+.town-hint-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.town-hint-bar #town-live-status {
+  color: #fbbf24;
+}
+
+.town-log-dock {
+  max-height: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(8, 18, 28, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  flex-shrink: 0;
+}
+
+.town-log-dock .chat-log {
+  max-height: 28px;
+  overflow: auto;
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
+.town-log-dock .msg { margin-bottom: 1px; }
+
+.town-log-dock .mira-upload-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.town-log-dock .hint {
+  margin: 0;
+  font-size: 0.68rem;
+}
+
+.hud-town .footer {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.65rem;
+}
+
+@media (max-width: 800px) {
+  .town-top {
+    grid-template-columns: 1fr;
+  }
+  .town-command { order: 3; }
+  .town-hint-bar { flex-direction: column; gap: 2px; }
+}

@@ -1,0 +1,30 @@
+{
+  "assistant_name": "Jarvis",
+  "user_name": "Ibrahim",
+  "ai_provider": "auto",
+  "voice": {
+    "tts_engine": "auto",
+    "voice_id": "en-GB-RyanNeural",
+    "wake_word": "jarvis",
+    "listen_timeout_seconds": 10,
+    "phrase_time_limit_seconds": 20
+  },
+  "memory": {
+    "file": "data/memory.json",
+    "max_context_items": 20
+  },
+  "system": {
+    "allowed_apps": [
+      "notepad",
+      "calculator",
+      "chrome",
+      "firefox",
+      "edge",
+      "explorer",
+      "cmd",
+      "powershell",
+      "spotify",
+      "discord"
+    ]
+  }
+}

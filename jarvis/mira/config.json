@@ -1,0 +1,33 @@
+{
+  "model_id": "mira_jarvis_v6",
+  "display_name": "Mira Creative Model (Jarvis)",
+  "kind": "first_party_pipeline",
+  "honesty": {
+    "is_trained_foundation_model": false,
+    "description": "Office gold path: Pexels HD motion + Edge TTS + MoviePy 1080p30 high bitrate. Not a trained NN. Not lip-sync."
+  },
+  "fps": 30,
+  "bitrate": "20000k",
+  "crf": 17,
+  "resolution": { "width": 1920, "height": 1080 },
+  "still_gen": {
+    "width": 1280,
+    "height": 720,
+    "model": "flux",
+    "default_stills": 5,
+    "timeout_sec": 75,
+    "upscale": true
+  },
+  "motion": {
+    "zoom_span": 0.0,
+    "crossfade_sec": 0.0
+  },
+  "audio": {
+    "provider": "edge-tts",
+    "voice": "en-US-GuyNeural",
+    "rate": "-6%",
+    "pitch": "+0Hz"
+  },
+  "quality_anchor": "photoreal cinematic, sharp, natural light, no watermark",
+  "negative": "blurry, watermark, text, logo, low resolution"
+}

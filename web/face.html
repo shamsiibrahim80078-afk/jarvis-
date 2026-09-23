@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J.A.R.V.I.S — Human View</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #c { position: fixed; inset: 0; display: block; }
+    .hud { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-family: 'Orbitron', sans-serif; color: #7eefff; }
+    .hud .tl { position: absolute; top: 22px; left: 26px; }
+    .hud .tr { position: absolute; top: 22px; right: 26px; text-align: right; }
+    .hud .bl { position: absolute; bottom: 22px; left: 26px; }
+    .hud .br { position: absolute; bottom: 22px; right: 26px; text-align: right; }
+    .hud .k { font-size: 10px; letter-spacing: .38em; opacity: .32; }
+    .hud .v { font-size: 13px; letter-spacing: .22em; text-shadow: 0 0 12px #22d3ee; margin-top: 4px; }
+    .center-status {
+      position: fixed; left: 50%; bottom: 9%;
+      transform: translateX(-50%);
+      z-index: 6; pointer-events: none; text-align: center;
+      font-family: 'Orbitron', sans-serif;
+    }
+    #status { font-size: 11px; letter-spacing: .55em; color: #7eefff; text-shadow: 0 0 14px #22d3ee; opacity: .8; }
+    #line { margin-top: 8px; font-family: 'Share Tech Mono', monospace; font-size: 13px; color: rgba(180,240,255,.5); min-height: 1.2em; max-width: 520px; }
+    .voice {
+      position: fixed; left: 50%; bottom: 16%;
+      transform: translateX(-50%);
+      width: 42px; height: 42px; z-index: 6; pointer-events: none; opacity: .0;
+      transition: opacity .4s;
+    }
+    .voice.on { opacity: .85; }
+    .voice svg { width: 100%; height: 100%; filter: drop-shadow(0 0 8px #22d3ee); }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hud">
+    <div class="tl"><div class="k">J.A.R.V.I.S</div><div class="v" id="sys">ONLINE</div></div>
+    <div class="tr"><div class="k">TIME</div><div class="v" id="clock">--:--:--</div></div>
+    <div class="bl"><div class="k">USER</div><div class="v">IBRAHIM</div></div>
+    <div class="br"><div class="k">MODE</div><div class="v" id="mode">ASSEMBLING</div></div>
+  </div>
+  <div class="voice" id="voice">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#7eefff" stroke-width="1.4">
+      <rect x="9" y="3" width="6" height="10" rx="3"/>
+      <path d="M6 11a6 6 0 0 0 12 0"/>
+      <path d="M12 17v4"/>
+    </svg>
+  </div>
+  <div class="center-status">
+    <div id="status">ASSEMBLING</div>
+    <div id="line"></div>
+  </div>
+
+<script>
+const API = location.origin;
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 1);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
+camera.position.set(0, 0.12, 5.6);
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12: true });
+}, 1000);
+
+function hash(i) {
+  const x = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/* Bust surface: head ellipsoid + neck + shoulders. No cartoon face. */
+function bustPoint(yNorm, ang, jitter) {
+  // yNorm 0 (shoulders) -> 1 (crown)
+  const y = -1.35 + yNorm * 2.55;
+  let rx, rz;
+
+  if (yNorm > 0.46) {
+    // head
+    const t = (yNorm - 0.46) / 0.54;
+    const ell = Math.sqrt(Math.max(0, 1 - Math.pow((t - 0.52) / 0.52, 2)));
+    rx = 0.52 * ell;
+    rz = 0.46 * ell;
+    // slightly flatten sides of skull
+    rx *= 0.98;
+  } else if (yNorm > 0.36) {
+    // neck
+    const t = (yNorm - 0.36) / 0.10;
+    rx = 0.16 + t * 0.08;
+    rz = 0.15 + t * 0.06;
+  } else {
+    // shoulders / chest
+    const t = 1 - yNorm / 0.36;
+    const flare = t * t;
+    rx = 0.18 + flare * 1.05;
+    rz = 0.12 + flare * 0.18;
+  }
+
+  const x = Math.cos(ang) * rx;
+  const z = Math.sin(ang) * rz;
+  return new THREE.Vector3(
+    x + (hash(jitter) - 0.5) * 0.01,
+    y + (hash(jitter + 3) - 0.5) * 0.008,
+    z + (hash(jitter + 7) - 0.5) * 0.01
+  );
+}
+
+const particles = [];
+const SLICES = 72;
+const PER_SLICE = 220;
+const STREAM = 4000;
+
+// Contour slices — topographic rings of the bust
+for (let s = 0; s < SLICES; s++) {
+  const yNorm = s / (SLICES - 1);
+  const n = PER_SLICE + Math.floor(hash(s) * 40);
+  for (let k = 0; k < n; k++) {
+    const ang = (k / n) * Math.PI * 2;
+    const p = bustPoint(yNorm, ang, s * 1000 + k);
+    particles.push({
+      tx: p.x, ty: p.y, tz: p.z,
+      yNorm, ang,
+      delay: (1 - yNorm) * 0.55 + hash(s * n + k) * 0.12,
+      size: yNorm > 0.46 ? 1.15 : 0.95,
+      kind: 'contour',
+    });
+  }
+}
+
+// Extra flowing stream particles (smoke-like fill)
+for (let i = 0; i < STREAM; i++) {
+  const yNorm = Math.pow(hash(i + 9), 0.75);
+  const ang = hash(i + 21) * Math.PI * 2;
+  const p = bustPoint(yNorm, ang, i + 400);
+  particles.push({
+    tx: p.x * (0.55 + hash(i) * 0.4),
+    ty: p.y,
+    tz: p.z * (0.55 + hash(i + 2) * 0.4),
+    yNorm, ang,
+    delay: (1 - yNorm) * 0.7 + hash(i) * 0.2,
+    size: 0.7,
+    kind: 'stream',
+  });
+}
+
+const COUNT = particles.length;
+const positions = new Float32Array(COUNT * 3);
+const startPos = new Float32Array(COUNT * 3);
+const targets = new Float32Array(COUNT * 3);
+const sizes = new Float32Array(COUNT);
+const phases = new Float32Array(COUNT);
+const delays = new Float32Array(COUNT);
+const yNorms = new Float32Array(COUNT);
+const angs = new Float32Array(COUNT);
+
+for (let i = 0; i < COUNT; i++) {
+  const p = particles[i];
+  targets[i*3] = p.tx; targets[i*3+1] = p.ty; targets[i*3+2] = p.tz;
+  const a = hash(i + 90) * Math.PI * 2;
+  const r = hash(i + 91) * 0.08;
+  startPos[i*3] = Math.cos(a) * r;
+  startPos[i*3+1] = -1.55 + (hash(i+92) - 0.5) * 0.05;
+  startPos[i*3+2] = Math.sin(a) * r;
+  positions[i*3] = startPos[i*3];
+  positions[i*3+1] = startPos[i*3+1];
+  positions[i*3+2] = startPos[i*3+2];
+  sizes[i] = p.size * (0.8 + hash(i) * 0.7);
+  phases[i] = hash(i + 8) * Math.PI * 2;
+  delays[i] = p.delay;
+  yNorms[i] = p.yNorm;
+  angs[i] = p.ang;
+}
+
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+
+const mat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  uniforms: {
+    uTime: { value: 0 },
+    uSpeak: { value: 0 },
+    uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
+  },
+  vertexShader: `
+    attribute float aSize;
+    attribute float aPhase;
+    uniform float uTime;
+    uniform float uSpeak;
+    uniform float uPixelRatio;
+    varying float vA;
+    void main() {
+      vec3 p = position;
+      float flicker = 0.82 + 0.18 * sin(uTime * 7.0 + aPhase);
+      p.x += sin(uTime * 1.6 + aPhase) * 0.004;
+      p.y += cos(uTime * 1.2 + aPhase) * 0.003;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = aSize * uPixelRatio * (11.0 / -mv.z) * flicker * (1.0 + uSpeak * 0.25);
+      gl_Position = projectionMatrix * mv;
+      vA = flicker;
+    }
+  `,
+  fragmentShader: `
+    varying float vA;
+    void main() {
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = length(uv);
+      float core = smoothstep(0.42, 0.0, d);
+      float halo = smoothstep(0.5, 0.12, d);
+      float a = (core * 0.9 + halo * 0.22) * vA;
+      if (a < 0.03) discard;
+      vec3 cyan = vec3(0.18, 0.82, 1.0);
+      gl_FragColor = vec4(cyan * (0.55 + core), a * 0.9);
+    }
+  `,
+});
+const cloud = new THREE.Points(geo, mat);
+scene.add(cloud);
+
+/* faint field rings */
+function addFieldRings() {
+  const g = new THREE.BufferGeometry();
+  const pts = [];
+  for (let r = 0; r < 8; r++) {
+    const rad = 0.9 + r * 0.28;
+    for (let i = 0; i <= 180; i++) {
+      const a = (i / 180) * Math.PI * 2;
+      pts.push(Math.cos(a) * rad, Math.sin(a) * rad * 0.72, -0.6 - r * 0.04);
+    }
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  const m = new THREE.LineBasicMaterial({ color: 0x123848, transparent: true, opacity: 0.22 });
+  const line = new THREE.Line(g, m);
+  line.rotation.x = -0.08;
+  scene.add(line);
+}
+addFieldRings();
+
+/* dust */
+const DUST = 700;
+const dustPos = new Float32Array(DUST * 3);
+for (let i = 0; i < DUST; i++) {
+  dustPos[i*3] = (Math.random() - 0.5) * 9;
+  dustPos[i*3+1] = (Math.random() - 0.5) * 7;
+  dustPos[i*3+2] = (Math.random() - 0.5) * 6;
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+scene.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({
+  color: 0x3ad7ff, size: 0.01, transparent: true, opacity: 0.28,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+})));
+
+function makeCore(color, size, y) {
+  const g = new THREE.SphereGeometry(size, 32, 32);
+  const m = new THREE.ShaderMaterial({
+    transparent: true,
+    uniforms: {
+      uTime: { value: 0 },
+      uI: { value: 0 },
+      uColor: { value: new THREE.Color(color) },
+    },
+    vertexShader: `
+      varying vec3 vN;
+      void main() {
+        vN = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vN;
+      uniform float uTime;
+      uniform float uI;
+      uniform vec3 uColor;
+      void main() {
+        float f = pow(1.0 - abs(dot(vN, vec3(0.0,0.0,1.0))), 2.0);
+        float pulse = 0.75 + 0.25 * sin(uTime * 3.4);
+        gl_FragColor = vec4(uColor * (1.1 + f), (0.35 + f * 0.65) * pulse * uI);
+      }
+    `,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(0, y, 0.08);
+  scene.add(mesh);
+  const light = new THREE.PointLight(color, 0, 4);
+  light.position.copy(mesh.position);
+  scene.add(light);
+  return { mesh, mat: m, light };
+}
+
+const brain = makeCore(0xff9a2a, 0.13, 0.42);
+const throat = makeCore(0xff7a1a, 0.07, -0.22);
+const orb = makeCore(0x3ad7ff, 0.11, -1.52);
+
+let assemble = 0;
+let state = 'assembling';
+let speak = 0, targetSpeak = 0;
+let mouseX = 0, mouseY = 0;
+addEventListener('mousemove', e => {
+  mouseX = (e.clientX / innerWidth - 0.5);
+  mouseY = (e.clientY / innerHeight - 0.5);
+});
+
+function setState(s) {
+  state = s;
+  const map = { idle:'STANDBY', assembling:'ASSEMBLING', listening:'LISTENING', thinking:'PROCESSING', speaking:'SPEAKING' };
+  const label = map[s] || 'STANDBY';
+  document.getElementById('status').textContent = label;
+  document.getElementById('mode').textContent = label;
+  document.getElementById('voice').classList.toggle('on', s === 'speaking' || s === 'listening');
+}
+
+function simulateSpeaking(ms) {
+  const dur = Math.min(ms, 10000);
+  const start = performance.now();
+  function tick() {
+    const t = performance.now() - start;
+    if (t > dur) { targetSpeak = 0; if (state === 'speaking') setState('idle'); return; }
+    targetSpeak = 0.3 + 0.7 * Math.abs(Math.sin(t * 0.013));
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  mat.uniforms.uTime.value = t;
+  brain.mat.uniforms.uTime.value = t;
+  throat.mat.uniforms.uTime.value = t;
+  orb.mat.uniforms.uTime.value = t;
+
+  if (assemble < 1) {
+    assemble = Math.min(1, assemble + 0.0048);
+    const e = assemble;
+    const pos = geo.attributes.position.array;
+    for (let i = 0; i < COUNT; i++) {
+      let k = (e - delays[i]) / (1.05 - delays[i]);
+      k = Math.max(0, Math.min(1, k));
+      k = k * k * (3 - 2 * k);
+      // swirl upward while assembling
+      const swirl = (1 - k) * 0.35;
+      const ang = angs[i] + (1 - k) * 4.5;
+      const lift = startPos[i*3+1] + k * (targets[i*3+1] - startPos[i*3+1]);
+      pos[i*3]   = startPos[i*3]   + (targets[i*3]   - startPos[i*3])   * k + Math.cos(ang) * swirl * (1-k);
+      pos[i*3+1] = lift;
+      pos[i*3+2] = startPos[i*3+2] + (targets[i*3+2] - startPos[i*3+2]) * k + Math.sin(ang) * swirl * (1-k);
+    }
+    geo.attributes.position.needsUpdate = true;
+    if (assemble >= 1 && state === 'assembling') setState('idle');
+  } else {
+    // idle flow along contours
+    const pos = geo.attributes.position.array;
+    for (let i = 0; i < COUNT; i++) {
+      const flow = t * 0.18 + phases[i];
+      const p = bustPoint(yNorms[i], angs[i] + Math.sin(flow) * 0.015, i);
+      pos[i*3] = p.x;
+      pos[i*3+1] = p.y + Math.sin(flow * 0.7) * 0.004;
+      pos[i*3+2] = p.z;
+    }
+    geo.attributes.position.needsUpdate = true;
+  }
+
+  speak += (targetSpeak - speak) * 0.1;
+  mat.uniforms.uSpeak.value = speak;
+
+  const coreOn = Math.max(0, (assemble - 0.35) / 0.65);
+  brain.mat.uniforms.uI.value = coreOn * (0.85 + speak * 0.5);
+  throat.mat.uniforms.uI.value = coreOn * (0.55 + speak * 0.4);
+  orb.mat.uniforms.uI.value = 0.9 + speak * 0.5;
+  brain.light.intensity = coreOn * (1.6 + speak * 2);
+  throat.light.intensity = coreOn * (0.9 + speak);
+  orb.light.intensity = 1.8 + speak * 1.5;
+  brain.mesh.scale.setScalar(1 + speak * 0.25 + Math.sin(t * 2.5) * 0.04);
+  throat.mesh.scale.setScalar(1 + speak * 0.2);
+  orb.mesh.scale.setScalar(1 + Math.sin(t * 2.2) * 0.06 + speak * 0.2);
+
+  cloud.rotation.y = mouseX * 0.35 + Math.sin(t * 0.12) * 0.03;
+  cloud.rotation.x = -mouseY * 0.18;
+  camera.position.x += (mouseX * 0.25 - camera.position.x) * 0.04;
+  camera.position.y += (0.12 - mouseY * 0.15 - camera.position.y) * 0.04;
+  camera.lookAt(0, 0.05, 0);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+function connectWS() {
+  try {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${proto}//${location.host}/ws`);
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'status') {
+        const s = (msg.status || '').toUpperCase();
+        if (s === 'LISTENING') setState('listening');
+        else if (s === 'THINKING' || s === 'PROCESSING') setState('thinking');
+        else if (s === 'SPEAKING') setState('speaking');
+        else if (assemble >= 1) setState('idle');
+      }
+      if (msg.type === 'jarvis') {
+        document.getElementById('line').textContent = (msg.text || '').slice(0, 140);
+        setState('speaking');
+        simulateSpeaking((msg.text || '').length * 45);
+      }
+      if (msg.type === 'user') document.getElementById('line').textContent = msg.text || '';
+    };
+    ws.onclose = () => setTimeout(connectWS, 4000);
+  } catch { setTimeout(connectWS, 4000); }
+}
+connectWS();
+
+setInterval(async () => {
+  try {
+    const r = await fetch(`${API}/api/health`, { signal: AbortSignal.timeout(5000) });
+    document.getElementById('sys').textContent = r.ok ? 'ONLINE' : 'OFFLINE';
+  } catch { document.getElementById('sys').textContent = 'OFFLINE'; }
+}, 10000);
+</script>
+</body>
+</html>
